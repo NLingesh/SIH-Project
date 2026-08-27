@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: darktrace-postgres
+    environment:
+      POSTGRES_USER: darktrace
+      POSTGRES_PASSWORD: darktrace
+      POSTGRES_DB: darktrace
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U darktrace -d darktrace"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5.19-community
+    container_name: darktrace-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/darktrace123
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_memory_heap_max__size: 1G
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "darktrace123", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: darktrace-backend
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://darktrace:darktrace@postgres:5432/darktrace
+      - DATABASE_URL_SYNC=postgresql://darktrace:darktrace@postgres:5432/darktrace
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=darktrace123
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production-min-32-chars
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRE_MINUTES=480
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      - UPLOAD_DIR=/app/uploads
+      - MAX_FILE_SIZE=52428800
+      - DEMO_MODE=true
+      - SEED_DEMO_DATA=true
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
