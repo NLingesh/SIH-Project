@@ -4,7 +4,7 @@ from app.api.routes import (
     auth, cases, artifacts, evidence, entities,
     graph, analysis, osint, blockchain, fingerprint,
     timeline, confidence, reports, review, audit,
-    search, system, pipeline
+    search, system, pipeline, intelligence
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -27,3 +27,4 @@ api_router.include_router(audit.router)
 api_router.include_router(search.router)
 api_router.include_router(system.router)
 api_router.include_router(pipeline.router)
+api_router.include_router(intelligence.router)

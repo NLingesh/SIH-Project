@@ -65,7 +65,7 @@ async def get_investigation_graph(
             
             query = f"""
             MATCH (n)-[r{rel_filter}]-(m)
-            WHERE n.case_id = $case_id OR m.case_id = $case_id
+            WHERE n.case_id = $case_id AND m.case_id = $case_id
             RETURN n, r, m
             LIMIT $limit
             """
