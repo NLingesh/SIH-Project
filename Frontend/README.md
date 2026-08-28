@@ -25,8 +25,9 @@ Authenticate, open the attribution investigations register, select an anonymous-
 ## Validation
 
 ```bash
+npm test
 npm run build
 npm run lint
 ```
 
-`npm run build` is the primary release check. The lint command requires the `eslint` executable to be installed in the project environment.
+`npm test` runs the deterministic jsdom integration suite for backend-authenticated login, JWT session persistence, failed-login feedback, live dashboard enrichment, attribution methodology messaging, system status, and investigation-to-workspace navigation. `npm run build` is the primary release check. The lint command requires the `eslint` executable to be installed in the project environment.
