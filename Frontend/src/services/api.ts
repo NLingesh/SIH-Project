@@ -450,3 +450,10 @@ export function normalizeConfidence(item: ApiConfidence): ConfidenceBreakdown {
     uncertainty: item.uncertainty_factors || 'No uncertainty factors provided.',
   }
 }
+
+
+export const startOnionCollection = (caseId: string, payload: { seed_url: string; authorization_ref: string; max_pages: number }) =>
+  api<ApiIntelligenceJob>(`/cases/${encodeURIComponent(caseId)}/intelligence/onion`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })

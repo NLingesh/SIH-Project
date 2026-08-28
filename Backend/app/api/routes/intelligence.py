@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime
+from datetime import datetime, timezone
+import json
 import uuid
+from dataclasses import asdict
 
 from app.core.database import get_db
 from app.core.logging import get_logger
-from app.models import Case, IntelligenceJob, CollectionStatus
-from app.schemas import IntelligenceJobResponse, ErrorResponse
+from app.services.onion_collector import OnionCollectionError, collect_onion_site
+from app.models import AuditEvent, AuditEventType, Case, IntelligenceJob, CollectionStatus
+from app.schemas import IntelligenceJobResponse, ErrorResponse, OnionCollectionRequest
 
 router = APIRouter(tags=["intelligence"])
 logger = get_logger(__name__)
@@ -70,3 +73,57 @@ async def list_intelligence_jobs(request: Request, case_id: str, db: AsyncSessio
         jobs = list(result.scalars().all())
 
     return [IntelligenceJobResponse.model_validate(j) for j in jobs]
+
+
+@router.post("/cases/{case_id}/intelligence/onion", response_model=IntelligenceJobResponse, status_code=status.HTTP_202_ACCEPTED, responses={400: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}})
+async def start_onion_collection(
+    request: Request,
+    case_id: str,
+    collection: OnionCollectionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.core.deps import get_current_user
+    current_user = await get_current_user(request, db)
+    result = await db.execute(select(Case).where(Case.case_id == case_id).where(Case.investigator_id == current_user.id))
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "CASE_NOT_FOUND", "message": "Case not found", "request_id": str(uuid.uuid4())})
+    if case.authorization_ref != collection.authorization_ref:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "AUTHORIZATION_MISMATCH", "message": "Collection authorization does not match the investigation authorization reference", "request_id": str(uuid.uuid4())})
+
+    try:
+        pages = await collect_onion_site(collection.seed_url, max_pages=collection.max_pages)
+    except OnionCollectionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": "UNSAFE_COLLECTION_TARGET", "message": str(exc), "request_id": str(uuid.uuid4())}) from exc
+    except Exception:
+        logger.exception("Allowlisted onion collection failed case_id=%s request_id=%s", case_id, getattr(request.state, "request_id", "unknown"))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail={"code": "COLLECTION_FAILED", "message": "The authorized collection service could not reach the configured target", "request_id": getattr(request.state, "request_id", str(uuid.uuid4()))})
+
+    started_at = datetime.utcnow()
+    job = IntelligenceJob(
+        job_id=f"ONION-{uuid.uuid4().hex[:12].upper()}",
+        case_id=case.id,
+        source=f"allowlisted onion source: {collection.seed_url}",
+        job_type="Authorized onion HTML collection",
+        status=CollectionStatus.COMPLETED,
+        progress=100,
+        started_at=started_at,
+        completed_at=datetime.utcnow(),
+        results=len(pages),
+        authorized_by=collection.authorization_ref,
+        is_synthetic=False,
+    )
+    db.add(job)
+    db.add(AuditEvent(
+        event_id=f"AUD-{uuid.uuid4().hex[:12].upper()}",
+        case_id=case.id,
+        user_id=current_user.id,
+        event_type=AuditEventType.ANALYSIS_COMPLETED,
+        description=f"Authorized onion collection completed: {len(pages)} pages",
+        event_metadata=json.dumps({"seed_url": collection.seed_url, "pages": [asdict(page) | {"fetched_at": page.fetched_at.isoformat()} for page in pages]}),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    ))
+    await db.commit()
+    await db.refresh(job)
+    return IntelligenceJobResponse.model_validate(job)

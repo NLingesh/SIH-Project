@@ -556,3 +556,9 @@ class SystemStatusResponse(BaseModel):
 # Error
 class ErrorResponse(BaseModel):
     error: Dict[str, Any]
+
+
+class OnionCollectionRequest(BaseModel):
+    seed_url: str = Field(min_length=8, max_length=500)
+    authorization_ref: str = Field(min_length=1, max_length=100)
+    max_pages: int = Field(default=5, ge=1, le=10)

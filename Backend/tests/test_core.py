@@ -133,3 +133,13 @@ def test_unauthorized_errors_advertise_bearer_authentication():
     assert error.status_code == 401
     assert error.headers == {"WWW-Authenticate": "Bearer"}
     assert error.detail["code"] == "INVALID_TOKEN"
+
+
+def test_onion_collector_requires_explicit_allowlist():
+    from app.services.onion_collector import OnionCollectionError, validate_target
+
+    assert validate_target("http://exampleauthorized.onion/start", ["exampleauthorized.onion"]) == "http://exampleauthorized.onion/start"
+    with pytest.raises(OnionCollectionError, match=r"Only http\(s\) \.onion"):
+        validate_target("https://example.com", ["exampleauthorized.onion"])
+    with pytest.raises(OnionCollectionError, match="allowlist"):
+        validate_target("http://not-authorized.onion", ["exampleauthorized.onion"])

@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     demo_mode: bool = Field(default=True, alias="DEMO_MODE")
     seed_demo_data: bool = Field(default=True, alias="SEED_DEMO_DATA")
 
+    tor_socks_proxy: str = Field(default="socks5://127.0.0.1:9050", alias="TOR_SOCKS_PROXY")
+    onion_allowlist_raw: str = Field(default="", alias="ONION_ALLOWLIST")
+    onion_request_timeout_seconds: int = Field(default=20, alias="ONION_REQUEST_TIMEOUT_SECONDS")
+    onion_max_pages: int = Field(default=10, alias="ONION_MAX_PAGES")
+    onion_max_response_bytes: int = Field(default=2_000_000, alias="ONION_MAX_RESPONSE_BYTES")
+
+    @property
+    def onion_allowlist(self) -> List[str]:
+        return [host.strip().lower().rstrip(".") for host in self.onion_allowlist_raw.split(",") if host.strip()]
+
     def validate_runtime(self) -> None:
         environment = self.app_env.strip().lower()
         if self.app_port < 1 or self.app_port > 65535:
@@ -53,6 +63,12 @@ class Settings(BaseSettings):
             raise ValueError("JWT_EXPIRE_MINUTES must be greater than zero")
         if self.max_file_size <= 0:
             raise ValueError("MAX_FILE_SIZE must be greater than zero")
+        if self.onion_request_timeout_seconds <= 0:
+            raise ValueError("ONION_REQUEST_TIMEOUT_SECONDS must be greater than zero")
+        if self.onion_max_pages <= 0 or self.onion_max_pages > 50:
+            raise ValueError("ONION_MAX_PAGES must be between 1 and 50")
+        if self.onion_max_response_bytes <= 0:
+            raise ValueError("ONION_MAX_RESPONSE_BYTES must be greater than zero")
         if not self.cors_origins:
             raise ValueError("CORS_ORIGINS must contain at least one origin")
         if environment in {"production", "staging"}:
