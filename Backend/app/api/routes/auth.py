@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta, timezone
 import uuid
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token
 from app.core.logging import get_logger
@@ -33,20 +34,21 @@ async def login(request: Request, credentials: LoginRequest, db: AsyncSession = 
         
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "INVALID_CREDENTIALS", "message": "Invalid investigator ID or passphrase", "request_id": str(uuid.uuid4())},
+            detail={"code": "INVALID_CREDENTIALS", "message": "Invalid investigator ID or passphrase", "request_id": getattr(request.state, "request_id", str(uuid.uuid4()))},
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "ACCOUNT_DISABLED", "message": "Account is disabled", "request_id": str(uuid.uuid4())},
+            detail={"code": "ACCOUNT_DISABLED", "message": "Account is disabled", "request_id": getattr(request.state, "request_id", str(uuid.uuid4()))},
         )
     
-    user.last_login = datetime.utcnow()
+    user.last_login = datetime.now(timezone.utc)
     
     access_token = create_access_token(
         data={"sub": user.investigator_id, "clearance": user.clearance_level},
-        expires_delta=timedelta(minutes=480),
+        expires_delta=timedelta(minutes=settings.jwt_expire_minutes),
     )
     
     audit = AuditEvent(

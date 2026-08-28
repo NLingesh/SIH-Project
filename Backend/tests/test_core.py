@@ -105,3 +105,31 @@ def test_audit_metadata_column():
     from app.models import AuditEvent
     col = AuditEvent.__table__.c["metadata"]
     assert col.key == "metadata"
+
+
+def test_malformed_password_hash_is_rejected_safely():
+    assert verify_password("anything", "not-a-bcrypt-hash") is False
+
+
+def test_runtime_config_rejects_insecure_production_secret():
+    from app.core.config import DEFAULT_JWT_SECRET, Settings
+
+    production = Settings(APP_ENV="production", JWT_SECRET=DEFAULT_JWT_SECRET)
+    with pytest.raises(ValueError, match="JWT_SECRET"):
+        production.validate_runtime()
+
+
+def test_runtime_config_accepts_valid_development_defaults():
+    from app.core.config import Settings
+
+    development = Settings(APP_ENV="development", JWT_SECRET="short-development-secret")
+    development.validate_runtime()
+
+
+def test_unauthorized_errors_advertise_bearer_authentication():
+    from app.core.deps import unauthorized
+
+    error = unauthorized("INVALID_TOKEN", "Invalid or expired token")
+    assert error.status_code == 401
+    assert error.headers == {"WWW-Authenticate": "Bearer"}
+    assert error.detail["code"] == "INVALID_TOKEN"

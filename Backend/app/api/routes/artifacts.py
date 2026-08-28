@@ -43,7 +43,15 @@ async def upload_artifact(
     current_user = await get_current_user(request, db)
     case = await get_case_or_404(case_id, current_user.id, db)
     
-    content = await file.read()
+    content = await file.read(settings.max_file_size + 1)
+    if len(content) > settings.max_file_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={"code": "ARTIFACT_TOO_LARGE", "message": f"Artifact exceeds the {settings.max_file_size} byte limit", "request_id": str(uuid.uuid4())},
+        )
+    safe_filename = os.path.basename(file.filename or "artifact.bin").replace("\x00", "") or "artifact.bin"
+    if safe_filename in {".", ".."}:
+        safe_filename = "artifact.bin"
     sha256_hash = hashlib.sha256(content).hexdigest()
     
     existing = await db.execute(select(Artifact).where(Artifact.sha256 == sha256_hash).where(Artifact.case_id == case.id))
@@ -55,7 +63,7 @@ async def upload_artifact(
     
     upload_dir = settings.upload_dir
     os.makedirs(upload_dir, exist_ok=True)
-    file_path = os.path.join(upload_dir, f"{sha256_hash}_{file.filename}")
+    file_path = os.path.join(upload_dir, f"{sha256_hash}_{safe_filename}")
     
     async with aiofiles.open(file_path, "wb") as f:
         await f.write(content)
@@ -79,7 +87,7 @@ async def upload_artifact(
         case_id=case.id,
         user_id=current_user.id,
         event_type=AuditEventType.ARTIFACT_ADDED,
-        description=f"Artifact uploaded: {artifact.artifact_id} ({file.filename})",
+        description=f"Artifact uploaded: {artifact.artifact_id} ({safe_filename})",
         event_metadata=f"sha256: {sha256_hash}, size: {len(content)}",
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),

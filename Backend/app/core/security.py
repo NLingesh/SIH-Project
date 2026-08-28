@@ -1,9 +1,10 @@
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
-from jose import jwt, JWTError
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+import uuid
+
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
-import uuid
 
 from app.core.config import settings
 
@@ -22,18 +23,16 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except (ValueError, TypeError):
+        return False
 
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
-    to_encode.update({"exp": expire, "jti": str(uuid.uuid4())})
-    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return encoded_jwt
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.jwt_expire_minutes))
+    to_encode = {**data, "exp": expire, "iat": datetime.now(timezone.utc), "jti": str(uuid.uuid4())}
+    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
 def decode_token(token: str) -> Optional[TokenData]:
@@ -42,8 +41,8 @@ def decode_token(token: str) -> Optional[TokenData]:
         investigator_id = payload.get("sub")
         clearance_level = payload.get("clearance", 1)
         exp = payload.get("exp")
-        if investigator_id is None:
+        if not investigator_id or exp is None:
             return None
-        return TokenData(investigator_id=investigator_id, clearance_level=clearance_level, exp=datetime.fromtimestamp(exp))
-    except JWTError:
+        return TokenData(investigator_id=str(investigator_id), clearance_level=int(clearance_level), exp=datetime.fromtimestamp(float(exp), tz=timezone.utc))
+    except (JWTError, TypeError, ValueError, OverflowError):
         return None
