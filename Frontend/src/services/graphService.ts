@@ -1,4 +1,5 @@
-import { graphNodes, graphEdges } from '../data/graph'
+import { getGraph } from './api'
+
 export const graphService = {
-  async getGraph(){ return { nodes: graphNodes, edges: graphEdges } }
+  getGraph,
 }

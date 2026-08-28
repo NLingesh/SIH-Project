@@ -1,6 +1,16 @@
-import { evidence, artifacts } from '../data/evidence'
+import { api, getArtifacts, getEvidence, type ApiEvidence } from './api'
+
+export { getArtifacts, getEvidence }
+
 export const evidenceService = {
-  async list(){ return evidence },
-  async listArtifacts(){ return artifacts },
-  async getEvidence(id:string){ return evidence.find(e=>e.evidence_id===id) },
+  list: getEvidence,
+  listArtifacts: getArtifacts,
+  async getEvidence(id: string): Promise<ApiEvidence> {
+    return api<ApiEvidence>(`/evidence/${encodeURIComponent(id)}`)
+  },
+  async updateNotes(id: string, notes: string): Promise<ApiEvidence> {
+    return api<ApiEvidence>(`/evidence/${encodeURIComponent(id)}/notes?notes=${encodeURIComponent(notes)}`, {
+      method: 'PATCH',
+    })
+  },
 }

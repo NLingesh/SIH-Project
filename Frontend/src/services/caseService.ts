@@ -1,9 +1,30 @@
-import { cases } from '../data/cases'
-import type { CaseItem } from '../types'
-// import { api } from './api'
+import { api, createReview, getCase, listCases, runAnalysis, type ApiCase } from './api'
+
+export { createReview, getCase, listCases, runAnalysis }
+
+export async function createCase(payload: {
+  title: string
+  description?: string
+  investigator_id: string
+  authorization_ref?: string
+  priority?: string
+  classification?: string
+}): Promise<ApiCase> {
+  return api<ApiCase>('/cases', { method: 'POST', body: JSON.stringify(payload) })
+}
 
 export const caseService = {
-  async list(): Promise<CaseItem[]>{ /* return api('/cases') */ return cases },
-  async get(caseId:string): Promise<CaseItem|undefined>{ return cases.find(c=>c.case_id===caseId) },
-  async create(payload: Partial<CaseItem>): Promise<CaseItem>{ const c = { ...payload, case_id:`CASE-2026-${String(cases.length+1).padStart(3,'0')}`, id:String(Date.now()) } as CaseItem; cases.unshift(c); return c },
+  list: listCases,
+  get: getCase,
+  create: createCase,
+  async createLegacy(payload: {
+    title: string
+    description?: string
+    investigator_id: string
+    authorization_ref?: string
+    priority?: string
+    classification?: string
+  }): Promise<ApiCase> {
+    return createCase(payload)
+  },
 }

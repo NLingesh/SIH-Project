@@ -1,116 +1,53 @@
-import { useMemo, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Panel } from '../components/common/Panel'
 import { Badge } from '../components/common/Badge'
-import { evidence, artifacts } from '../data/evidence'
+import { EmptyState, ErrorState, LoadingState } from '../components/common/AsyncState'
 import { useToast } from '../components/common/Toast'
+import { evidenceService } from '../services/evidenceService'
+import { uploadArtifact } from '../services/api'
+import { toCaseViewModel, useCaseData } from '../hooks/useCaseData'
+import { useSelectedCaseId } from '../hooks/useSelectedCaseId'
 
-export function Evidence(){
-  const [q,setQ]=useState('')
-  const [filter,setFilter]=useState<string>('all')
-  const [selected,setSelected]=useState<string | null>(null)
+export function Evidence() {
+  const { caseId } = useSelectedCaseId()
+  const state = useCaseData(caseId)
+  const [q, setQ] = useState('')
+  const [filter, setFilter] = useState('all')
+  const [selected, setSelected] = useState<string | null>(null)
+  const [note, setNote] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
   const { push } = useToast()
-  const filtered = useMemo(()=> evidence.filter(e=>{
-    if(filter!=='all' && e.signal_type!==filter) return false
-    if(q && !(e.evidence_id+e.artifact_name+e.feature+e.explanation).toLowerCase().includes(q.toLowerCase())) return false
-    return true
-  }),[q,filter])
-  const sel = evidence.find(e=>e.evidence_id===selected)
 
-  return <div style={{display:'flex', flexDirection:'column', gap:14}}>
-    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
-      <div>
-        <div style={{fontSize:20, fontWeight:800}}>Evidence Explorer</div>
-        <div className="mono" style={{fontSize:11, color:'var(--text-3)'}}>Artifact list • hash • integrity • provenance • Click row for detail</div>
-      </div>
-      <div style={{display:'flex', gap:8}}>
-        <button className="btn" onClick={()=>push('Artifact upload requires file + source_type + authorization','info')}>Upload Artifact</button>
-        <button className="btn btn-primary" onClick={()=>push('Evidence integrity re-validated — all SHA256 verified','success')}>Verify Integrity</button>
-      </div>
-    </div>
+  if (!caseId) return <LoadingState label="Selecting a case from the backend…" />
+  if (state.loading || !state.data) return state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : <LoadingState label="Loading evidence from backend…" />
+  const vm = toCaseViewModel(state.data)
+  const rawEvidence = state.data.evidence
+  const filtered = vm.evidence.filter(item => (filter === 'all' || item.signal_type === filter) && (!q || `${item.evidence_id} ${item.artifact_name} ${item.feature} ${item.explanation}`.toLowerCase().includes(q.toLowerCase())))
+  const selectedItem = vm.evidence.find(item => item.evidence_id === selected)
+  const selectedRaw = rawEvidence.find(item => item.evidence_id === selected)
 
-    <Panel noPadding>
-      <div style={{padding:12, display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', borderBottom:'1px solid var(--border)', background:'rgba(255,255,255,0.02)'}}>
-        <div style={{position:'relative', flex:'1 1 260px', maxWidth:480}}>
-          <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-3)'}}>⌕</span>
-          <input className="input" placeholder="Search evidence ID, artifact, feature, explanation…" value={q} onChange={e=>setQ(e.target.value)} style={{paddingLeft:30}}/>
-        </div>
-        <select className="select" style={{width:180}} value={filter} onChange={e=>setFilter(e.target.value)}>
-          <option value="all">All signals</option><option value="stylometry">Stylometry</option><option value="blockchain">Blockchain</option><option value="osint">OSINT</option><option value="technical_fingerprint">Technical</option><option value="temporal">Temporal</option>
-        </select>
-        <span className="kbd">{filtered.length} EVIDENCE</span>
-        <span className="kbd">{artifacts.length} ARTIFACTS</span>
-      </div>
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try { await uploadArtifact(caseId, file); push('Artifact uploaded and hashed by the backend.', 'success'); state.reload() }
+    catch (cause) { push(cause instanceof Error ? cause.message : 'Artifact upload failed.', 'error') }
+    finally { event.target.value = '' }
+  }
+  const saveNote = async () => {
+    if (!selectedRaw) return
+    setSavingNote(true)
+    try { await evidenceService.updateNotes(selectedRaw.evidence_id, note); push('Analyst note saved to the backend.', 'success'); state.reload() }
+    catch (cause) { push(cause instanceof Error ? cause.message : 'Unable to save analyst note.', 'error') }
+    finally { setSavingNote(false) }
+  }
 
-      <div style={{display:'grid', gridTemplateColumns: sel ? '1fr 380px' : '1fr'}}>
-        <div className="table-wrap" style={{border:'none', borderRadius:0}}>
-          <table>
-            <thead><tr><th>EVIDENCE ID</th><th>ARTIFACT</th><th>SIGNAL</th><th>SCORE</th><th>HASH</th><th>INTEGRITY</th><th>PROCESSING</th></tr></thead>
-            <tbody>
-              {filtered.map(e=>(
-                <tr key={e.evidence_id} onClick={()=>setSelected(e.evidence_id)} style={{cursor:'pointer', background: selected===e.evidence_id?'rgba(34,211,238,0.06)':undefined}}>
-                  <td className="mono" style={{fontWeight:700, color: selected===e.evidence_id?'var(--accent)':'var(--text-1)'}}>{e.evidence_id}</td>
-                  <td>
-                    <div style={{fontWeight:600}}>{e.artifact_name}</div>
-                    <div className="mono" style={{fontSize:10, color:'var(--text-3)'}}>{e.collected_at} • {e.source}</div>
-                  </td>
-                  <td><Badge tone="info">{e.signal_type}</Badge></td>
-                  <td style={{fontWeight:700}}>{e.score}<span style={{color:'var(--text-3)', fontWeight:400}}> / {e.confidence}%</span></td>
-                  <td className="mono" style={{fontSize:11}}>{e.hash}</td>
-                  <td><Badge tone={e.integrity==='verified'?'success':e.integrity==='pending'?'warn':'danger'}>{e.integrity}</Badge></td>
-                  <td><Badge tone={e.processing==='processed'?'success':e.processing==='processing'?'warn':'neutral'}>{e.processing}</Badge></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length===0 && <div style={{padding:24, textAlign:'center', color:'var(--text-3)'}}>No evidence matches filters.</div>}
-        </div>
-
-        {sel && <div style={{borderLeft:'1px solid var(--border)', background:'var(--bg-soft)', padding:14, display:'flex', flexDirection:'column', gap:12}}>
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-            <div style={{fontWeight:800}} className="mono">{sel.evidence_id}</div>
-            <button className="btn btn-sm btn-ghost" onClick={()=>setSelected(null)}>✕</button>
-          </div>
-          <div style={{background:'var(--bg-panel)', border:'1px solid var(--border)', borderRadius:10, padding:12}}>
-            <div style={{fontSize:11, letterSpacing:'0.08em', fontWeight:700, color:'var(--text-3)'}}>PROVENANCE</div>
-            <div className="mono" style={{fontSize:11, marginTop:6, lineHeight:1.6}}>
-              <div><strong>Source:</strong> {sel.source}</div>
-              <div><strong>Type:</strong> {sel.type}</div>
-              <div><strong>Collected:</strong> {sel.collected_at}</div>
-              <div><strong>SHA256:</strong> <span style={{color:'var(--accent)'}}>{sel.hash}</span></div>
-              <div><strong>Feature:</strong> {sel.feature}</div>
-              <div><strong>Score:</strong> {sel.score} • Confidence {sel.confidence}%</div>
-            </div>
-          </div>
-          <div style={{background:'var(--bg-panel)', border:'1px solid var(--border)', borderRadius:10, padding:12}}>
-            <div style={{fontSize:11, fontWeight:700, letterSpacing:'0.06em', color:'var(--text-3)'}}>EXPLANATION</div>
-            <div style={{fontSize:12, color:'var(--text-2)', marginTop:6}}>{sel.explanation}</div>
-            <div style={{marginTop:8, fontSize:11, color:'var(--warn)', background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.2)', padding:'6px 8px', borderRadius:6}}>Requires analyst verification • Not definitive</div>
-          </div>
-          <div style={{display:'flex', gap:6}}>
-            <button className="btn btn-sm btn-primary" style={{flex:1}} onClick={()=>push(`Evidence ${sel.evidence_id} referenced in report draft`,'success')}>Reference in Report</button>
-            <button className="btn btn-sm" onClick={()=>push('Analyst note added','info')}>Add Note</button>
-          </div>
-        </div>}
-      </div>
-    </Panel>
-
-    <Panel title="Artifacts — Provenance & Storage">
-      <div className="table-wrap"><table>
-        <thead><tr><th>ARTIFACT ID</th><th>SOURCE REF</th><th>TYPE</th><th>SHA256</th><th>MIME</th><th>SIZE</th><th>COLLECTED</th></tr></thead>
-        <tbody>
-          {artifacts.map(a=>(
-            <tr key={a.artifact_id}>
-              <td className="mono" style={{fontWeight:700}}>{a.artifact_id}</td>
-              <td className="mono" style={{fontSize:11}}>{a.source_ref}</td>
-              <td><Badge tone="neutral">{a.source_type}</Badge></td>
-              <td className="mono" style={{fontSize:11, color:'var(--accent)'}}>{a.sha256.slice(0,16)}…{a.sha256.slice(-8)}</td>
-              <td className="mono" style={{fontSize:11}}>{a.mime}</td>
-              <td className="mono">{a.size} B</td>
-              <td className="mono" style={{fontSize:11, color:'var(--text-3)'}}>{new Date(a.collected_at).toLocaleString('en-GB')}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table></div>
-    </Panel>
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}><div><div style={{ fontSize: 20, fontWeight: 800 }}>Evidence Explorer</div><div className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>Live evidence and artifact data • {caseId}</div></div><div style={{ display: 'flex', gap: 8 }}><input ref={fileInput} type="file" hidden onChange={handleUpload} /><button className="btn" onClick={() => fileInput.current?.click()}>Upload Artifact</button><button className="btn btn-primary" onClick={() => state.reload()}>Refresh</button></div></div>
+    <Panel noPadding><div style={{ padding: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderBottom: '1px solid var(--border)' }}><input className="input" placeholder="Search evidence ID, artifact, feature…" value={q} onChange={event => setQ(event.target.value)} style={{ flex: '1 1 260px', maxWidth: 480 }} /><select className="select" style={{ width: 180 }} value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All signals</option><option value="stylometry">Stylometry</option><option value="blockchain">Blockchain</option><option value="osint">OSINT</option><option value="technical_fingerprint">Technical</option><option value="temporal">Temporal</option></select><span className="kbd">{filtered.length} EVIDENCE</span><span className="kbd">{vm.artifacts.length} ARTIFACTS</span></div>
+      <div style={{ display: 'grid', gridTemplateColumns: selectedItem ? '1fr 360px' : '1fr' }}><div className="table-wrap" style={{ border: 'none', borderRadius: 0 }}><table><thead><tr><th>EVIDENCE ID</th><th>ARTIFACT</th><th>SIGNAL</th><th>SCORE</th><th>HASH</th><th>INTEGRITY</th></tr></thead><tbody>{filtered.map(item => <tr key={item.evidence_id} onClick={() => { setSelected(item.evidence_id); setNote(rawEvidence.find(raw => raw.evidence_id === item.evidence_id)?.analyst_notes || '') }} style={{ cursor: 'pointer', background: selected === item.evidence_id ? 'rgba(34,211,238,0.06)' : undefined }}><td className="mono" style={{ fontWeight: 700, color: selected === item.evidence_id ? 'var(--accent)' : undefined }}>{item.evidence_id}</td><td><div style={{ fontWeight: 600 }}>{item.artifact_name}</div><div className="mono" style={{ fontSize: 10, color: 'var(--text-3)' }}>{new Date(item.collected_at).toLocaleString()} • {item.source}</div></td><td><Badge tone="info">{item.signal_type}</Badge></td><td style={{ fontWeight: 700 }}>{item.score}<span style={{ color: 'var(--text-3)', fontWeight: 400 }}> / {item.confidence}%</span></td><td className="mono" style={{ fontSize: 11 }}>{item.hash === '—' ? '—' : `${item.hash.slice(0, 14)}…`}</td><td><Badge tone={item.integrity === 'verified' ? 'success' : 'warn'}>{item.integrity}</Badge></td></tr>)}{!filtered.length && <tr><td colSpan={6}><EmptyState label="No evidence matches the current filters." /></td></tr>}</tbody></table></div>
+        {selectedItem && <div style={{ borderLeft: '1px solid var(--border)', background: 'var(--bg-soft)', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><strong className="mono">{selectedItem.evidence_id}</strong><button className="btn btn-sm btn-ghost" onClick={() => setSelected(null)}>✕</button></div><div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}><div><strong>Feature:</strong> {selectedItem.feature}</div><div><strong>Source:</strong> {selectedItem.source}</div><div><strong>SHA256:</strong> {selectedItem.hash}</div><div><strong>Score:</strong> {selectedItem.score} • Confidence {selectedItem.confidence}%</div></div><div style={{ fontSize: 12, color: 'var(--text-2)' }}>{selectedItem.explanation}</div><textarea className="input" rows={4} placeholder="Analyst note" value={note} onChange={event => setNote(event.target.value)} /><button className="btn btn-primary" onClick={() => void saveNote()} disabled={savingNote}>{savingNote ? 'Saving…' : 'Save analyst note'}</button></div>}
+      </div></Panel>
+    <Panel title="Artifacts — provenance and storage"><div className="table-wrap"><table><thead><tr><th>ARTIFACT ID</th><th>SOURCE REF</th><th>TYPE</th><th>SHA256</th><th>MIME</th><th>SIZE</th><th>COLLECTED</th></tr></thead><tbody>{vm.artifacts.map(item => <tr key={item.artifact_id}><td className="mono">{item.artifact_id}</td><td className="mono">{item.source_ref}</td><td><Badge tone="neutral">{item.source_type}</Badge></td><td className="mono" style={{ color: 'var(--accent)' }}>{item.sha256.slice(0, 16)}…</td><td className="mono">{item.mime}</td><td className="mono">{item.size} B</td><td className="mono">{new Date(item.collected_at).toLocaleString()}</td></tr>)}{!vm.artifacts.length && <tr><td colSpan={7}><EmptyState label="No artifacts returned for this case." /></td></tr>}</tbody></table></div></Panel>
   </div>
 }

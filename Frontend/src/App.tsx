@@ -1,6 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { AuthProvider, useAuth } from './auth'
 import { Shell } from './components/layout/Shell'
 import { ToastProvider } from './components/common/Toast'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { Dashboard } from './pages/Dashboard'
 import { Cases } from './pages/Cases'
 import { Workspace } from './pages/Workspace'
@@ -16,42 +18,53 @@ import { Timeline } from './pages/Timeline'
 import { Login } from './pages/Login'
 import { useState } from 'react'
 
-function Protected({ children }: { children:React.ReactNode }){
-  const token = typeof localStorage!=='undefined' ? localStorage.getItem('dt_token') : null
-  if(!token) return <Login/>
+function Protected({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuth()
+  if (!isAuthenticated) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
-export default function App(){
-  const [search,setSearch]=useState('')
-  // keep search state if needed
+function RoutedApp() {
+  const [search, setSearch] = useState('')
   void search
-  return <ToastProvider>
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/*" element={
+        <Protected>
+          <Shell caseContext="" onSearch={setSearch}>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/cases" element={<Cases />} />
+              <Route path="/workspace" element={<Workspace />} />
+              <Route path="/evidence" element={<Evidence />} />
+              <Route path="/intelligence" element={<Intelligence />} />
+              <Route path="/analysis" element={<Analysis />} />
+              <Route path="/entities" element={<Entities />} />
+              <Route path="/graph" element={<Graph />} />
+              <Route path="/confidence" element={<Confidence />} />
+              <Route path="/review" element={<Review />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/timeline" element={<Timeline />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Shell>
+        </Protected>
+      } />
+    </Routes>
+  )
+}
+
+export default function App() {
+  return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login/>}/>
-        <Route path="/*" element={
-          <Protected>
-            <Shell caseContext="CASE-2026-001 • AUTH-2026-SYN-001" onSearch={setSearch}>
-              <Routes>
-                <Route path="/" element={<Dashboard/>}/>
-                <Route path="/cases" element={<Cases/>}/>
-                <Route path="/workspace" element={<Workspace/>}/>
-                <Route path="/evidence" element={<Evidence/>}/>
-                <Route path="/intelligence" element={<Intelligence/>}/>
-                <Route path="/analysis" element={<Analysis/>}/>
-                <Route path="/entities" element={<Entities/>}/>
-                <Route path="/graph" element={<Graph/>}/>
-                <Route path="/confidence" element={<Confidence/>}/>
-                <Route path="/review" element={<Review/>}/>
-                <Route path="/reports" element={<Reports/>}/>
-                <Route path="/timeline" element={<Timeline/>}/>
-                <Route path="*" element={<Navigate to="/" replace/>}/>
-              </Routes>
-            </Shell>
-          </Protected>
-        }/>
-      </Routes>
+      <AuthProvider>
+        <ToastProvider>
+          <ErrorBoundary>
+            <RoutedApp />
+          </ErrorBoundary>
+        </ToastProvider>
+      </AuthProvider>
     </BrowserRouter>
-  </ToastProvider>
+  )
 }
