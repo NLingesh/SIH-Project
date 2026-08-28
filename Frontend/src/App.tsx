@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import { Shell } from './components/layout/Shell'
 import { ToastProvider } from './components/common/Toast'
@@ -16,7 +16,6 @@ import { Review } from './pages/Review'
 import { Reports } from './pages/Reports'
 import { Timeline } from './pages/Timeline'
 import { Login } from './pages/Login'
-import { useState } from 'react'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
@@ -25,14 +24,14 @@ function Protected({ children }: { children: React.ReactNode }) {
 }
 
 function RoutedApp() {
-  const [search, setSearch] = useState('')
-  void search
+  const location = useLocation()
+  const caseContext = new URLSearchParams(location.search).get('case') || undefined
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/*" element={
         <Protected>
-          <Shell caseContext="" onSearch={setSearch}>
+          <Shell caseContext={caseContext} onSearch={() => undefined}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/cases" element={<Cases />} />

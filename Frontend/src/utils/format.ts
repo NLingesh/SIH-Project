@@ -16,3 +16,21 @@ export const statusBadge = (s:string) => {
   }
   return map[s] || map.open
 }
+
+const attributionLabels: Record<string, string> = {
+  writing_style: 'Writing style',
+  temporal: 'Activity timing',
+  behavioral: 'Behavioral pattern',
+  financial: 'Financial linkage',
+  technical: 'Technical fingerprint',
+  technical_fingerprint: 'Technical fingerprint',
+  infrastructure: 'Infrastructure',
+  alias: 'Alias',
+  account: 'Account',
+  wallet: 'Wallet',
+  domain: 'Domain',
+  ip: 'IP address',
+  actor: 'Actor candidate',
+  document: 'Document',
+}
+export const prettyLabel = (value: string) => attributionLabels[value] || value.replace(/[_-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
